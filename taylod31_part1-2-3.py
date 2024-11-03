@@ -1,4 +1,3 @@
-
 # Author: Swati Mishra
 # Created: Sep 23, 2024
 # License: MIT License
@@ -26,7 +25,7 @@ from sklearn.metrics import accuracy_score, recall_score, precision_score
 from sklearn.utils import shuffle
 
 class svm_():
-    def __init__(self,learning_rate,epoch,tolerance,C_value,X,Y,X_test,Y_test,sigma=1.0):
+    def __init__(self,learning_rate,epoch,tolerance,C_value,X,Y,X_test,Y_test, do_mini_batch = False, mini_batch_size = 32):
 
         #initialize the variables
         self.input = X
@@ -37,7 +36,9 @@ class svm_():
         self.epoch = epoch
         self.C = C_value
         self.tol = tolerance
-        self.sigma = sigma
+        self.minibatch = do_mini_batch
+        self.batch_size = mini_batch_size
+
 
         #initialize the weight matrix based on number of features 
         # bias and weights are merged together as one matrix
@@ -49,11 +50,6 @@ class svm_():
         np.random.seed(seed)
         self.weights = np.random.randn(X.shape[1])
 
-    def rbf_kernel(self, x1, x2):
-        # Compute the squared Euclidean distance
-        distance = np.sum((x1 - x2) ** 2)
-        # Compute the RBF kernel
-        return np.exp(-distance / (2 * self.sigma ** 2))
 
     def pre_process(self,):
 
@@ -101,8 +97,6 @@ class svm_():
         for i in range(len(X)):
             x_i = X[i]
             y_i = Y[i]
-            #K = np.array([self.rbf_kernel(x_i, x_j) for x_j in X])
-            #hinge_loss = max(0, 1 - y_i * np.dot(K, self.weights))
             hinge_loss = max(0, 1 - y_i * np.dot(x_i, self.weights))
             loss += hinge_loss
         # Normalize hinge loss
@@ -133,12 +127,28 @@ class svm_():
             # shuffle to prevent repeating update cycles
             features, output = shuffle(X, Y)
 
-            for i, feature in enumerate(features):
-                gradient = self.compute_gradient(feature, output[i])
-                self.weights = self.weights - (self.learning_rate * gradient)
+            if(self.minibatch):
+                # Divide the dataset into mini-batches
+                for start in range(0, len(features), self.batch_size):
+                    end = start + self.batch_size
+                    mini_batch_X = features[start:end]
+                    mini_batch_Y = output[start:end]
+
+                    # Compute the gradient for the mini-batch
+                    gradient = np.zeros_like(self.weights)
+                    for i in range(len(mini_batch_X)):
+                        gradient += self.compute_gradient(mini_batch_X[i], mini_batch_Y[i])
+                    gradient /= len(mini_batch_X)
+
+                    # Update the weights
+                    self.weights = self.weights - (self.learning_rate * gradient)
+            else:
+                for i, feature in enumerate(features):
+                    gradient = self.compute_gradient(feature, output[i])
+                    self.weights = self.weights - (self.learning_rate * gradient)
 
             #print epoch if it is equal to thousand - to minimize number of prints
-            if epoch % (self.epoch // 10) == 0:
+            if epoch % (self.epoch // 10) == 0 or epoch == self.epoch - 1:
             #if epoch %1 == 0:
                 loss = self.compute_loss(features, output)
                 val_loss = self.compute_loss(test_features, test_output)
@@ -149,25 +159,24 @@ class svm_():
                 val_loss_values.append(val_loss)
                 epoch_values.append(epoch)
 
-            # Check for convergence
+            
+            # Part 1: Early Stopping
             # Compute the loss on the validation set
             current_loss = self.compute_loss(test_features, test_output)
 
             # Check if the improvement is below the tolerance
-            if (abs(prev_loss - current_loss) < self.tol and first_time):
+            if ((abs(prev_loss - current_loss) < self.tol) and first_time):
                 min_epoch = epoch
                 early_weights = np.copy(self.weights)
                 print("The minimum number of iterations taken are: ", min_epoch)
-
                 first_time = False
 
+            if current_loss < prev_loss:
+                best_weights = np.copy(self.weights)
+
             prev_loss = current_loss
-            
-            # Part 1
 
-        
 
-            #check for convergence - end
 
             # below code will be required for Part 3
             
@@ -176,34 +185,34 @@ class svm_():
         #samples+=1
 
         print("Training ended...")
-        print("weights are: {}".format(self.weights))
+        print("Weights are: {}".format(self.weights))
 
         # Plot loss and validation loss
         plt.plot(epoch_values, loss_values, label='Training Loss')
         plt.plot(epoch_values, val_loss_values, label='Validation Loss')
-        plt.axvline(x=min_epoch, color='r', linestyle='--', label='Min Epoch')  # Add vertical line at min_epoch
+        plt.axvline(x=min_epoch, color='r', linestyle='--', label='Min Epoch')  # Vertical line at min_epoch
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
+        if self.minibatch:
+            plt.title('Training and Validation Loss with Mini Batch')  # Add title to the graph
+        else:   
+            plt.title('Training and Validation Loss with Batch')  # Add title to the graph
         #plt.xscale('log')
         #plt.yscale('log')
         plt.legend()
         plt.show()
 
-        return early_weights
+        return early_weights, best_weights, epoch_values, loss_values, val_loss_values, min_epoch
 
         # below code will be required for Part 3
         #print("The minimum number of samples used are:",samples)
 
-    def mini_batch_gradient_descent(self,X,Y,batch_size):
+    def mini_batch_gradient_descent(self, X, Y, test_features, test_output, batch_size):
+        self.mini_batch = True
+        self.batch_size = batch_size
+        early_weights, best_weights = self.stochastic_gradient_descent(X, Y, test_features, test_output)
 
-        # mini batch gradient decent implementation - start
-
-        # Part 2
-
-        # mini batch gradient decent implementation - end
-
-        print("Training ended...")
-        print("weights are: {}".format(self.weights))
+        return early_weights, best_weights, epoch_values, loss_values, val_loss_values
 
     def sampling_strategy(self,X,Y):
         x = X[0]
@@ -217,72 +226,85 @@ class svm_():
 
     def predict(self,X_test,Y_test,weights):
 
-        '''
         # Compute predictions on test set
-        predicted_values = []
-        for i in range(X_test.shape[0]):
-            # Compute the RBF kernel values for the i-th test sample against all training samples
-            K = np.array([self.rbf_kernel(X_test[i], x_j) for x_j in X_test])
-            # Compute the dot product with the weights
-            prediction = np.sign(np.dot(K, self.weights))
-            predicted_values.append(prediction)
-        '''
-
-
-        #compute predictions on test set
         predicted_values = [np.sign(np.dot(X_test[i], weights)) for i in range(X_test.shape[0])]
-        #predicted_values = [np.sign(np.dot([self.rbf_kernel(X_test[i], x_j) for x_j in self.input], self.weights)) for i in range(X_test.shape[0])]
-        #compute accuracy
+       
+        # Compute accuracy
         accuracy = accuracy_score(Y_test, predicted_values)
-        #print("Accuracy on test dataset: {}".format(accuracy))
 
-        #compute precision - start
-        # Part 2
-        #compute precision - end
+        # Compute precision
+        precision = precision_score(Y_test, predicted_values)
 
-        #compute recall - start
-        # Part 2
-        #compute recall - end
-        return accuracy
-        #return np.array(predicted_values)
+        # Compute recall
+        recall = recall_score(Y_test, predicted_values)
+        
+        return accuracy, precision, recall
+        
 
 def part_1(X_train, y_train, X_test, y_test):
-    #model parameters - try different ones
+    # Model parameters
     C = 1.4
     learning_rate = 0.001
     epoch = 1000
     tol = 1e-5
   
-    #instantiate the support vector machine class above
+    # Instantiate the support vector machine class above
     my_svm = svm_(learning_rate=learning_rate,epoch=epoch,tolerance=tol,C_value=C,X=X_train,Y=y_train, X_test=X_test, Y_test=y_test)
+
+    # Pre preocess data
+    X_norm,Y,X_test_norm = my_svm.pre_process()
+
+    # Train model
+    early_weights, best_weights, epoch_values, loss_values, val_loss_values, min_epoch = my_svm.stochastic_gradient_descent(X_norm,Y,X_test_norm,y_test)
+
+    # Compute accuracy
+    accuracy, precision, recall = my_svm.predict(X_test_norm, y_test, early_weights)
+    print("Accuracy on test dataset from part 1: {}".format(accuracy))
+    print("Precision on test dataset from part 1: {}".format(precision))
+    print("Recall on test dataset from part 1: {}".format(recall))
+    
+    return my_svm, loss_values, val_loss_values, min_epoch
+
+def part_2(X_train, y_train, X_test, y_test):
+    #model parameters - try different ones
+    C = 1.4 
+    learning_rate = 0.001 
+    epoch = 1000
+    batch_size = 32
+    tol = 1e-5
+  
+    #intantiate the support vector machine class above
+    my_svm = svm_(learning_rate=learning_rate,epoch=epoch,tolerance=tol,C_value=C,X=X_train,Y=y_train, X_test=X_test, Y_test=y_test, do_mini_batch = True, mini_batch_size = batch_size)
 
     #pre preocess data
     X_norm,Y,X_test_norm = my_svm.pre_process()
 
-    # train model
-    weights = my_svm.stochastic_gradient_descent(X_norm,Y,X_test_norm,y_test)
+    # train model with mini-batch gradient descent
+    #early_weights, best_weights = my_svm.mini_batch_gradient_descent(X_norm,Y,X_test_norm,y_test, batch_size)
+    early_weights, best_weights, epoch_values, loss_values, val_loss_values, min_epoch = my_svm.stochastic_gradient_descent(X_norm,Y,X_test_norm,y_test)
+
+    # train model with stochastic gradient descent
+    svm, loss_values_stochastic, val_loss_values_stochastic, min_epoch_stochastic = part_1(X_train, y_train, X_test, y_test)
 
     # compute accuracy
-    accuracy = my_svm.predict(X_test_norm,y_test, weights)
-    print("Accuracy on test dataset from part 1: {}".format(accuracy))
+    accuracy, precision, recall = my_svm.predict(X_test_norm, y_test, early_weights)
+    print("Accuracy on test dataset from part 2: {}".format(accuracy))
+    print("Precision on test dataset from part 2: {}".format(precision))
+    print("Recall on test dataset from part 2: {}".format(recall))
 
-    return my_svm
-
-def part_2(X_train,y_train):
-    #model parameters - try different ones
-    C = 0.001 
-    learning_rate = 0.001 
-    epoch = 5000
-  
-    #intantiate the support vector machine class above
-    my_svm = svm_(learning_rate=learning_rate,epoch=epoch,C_value=C,X=X_train,Y=y_train)
-
-    #pre preocess data
-
-    # select samples for training
-
-    # train model
-
+    # Plot loss values and validation loss values for both methods
+    plt.plot(epoch_values, loss_values, color='b', linestyle='--', label='Mini-Batch Training Loss')
+    plt.plot(epoch_values,  val_loss_values, color='orange', linestyle='--', label='Mini-Batch Validation Loss')
+    plt.plot(epoch_values, loss_values_stochastic, color='b',  label='Stochastic Training Loss')
+    plt.plot(epoch_values,  val_loss_values_stochastic, color='orange', label='Stochastic Validation Loss')
+    plt.axvline(x=min_epoch, color='r', linestyle='--', label='Min Epoch for Mini-Batch')  # Vertical line at min_epoch
+    plt.axvline(x=min_epoch_stochastic, color='r', label='Min Epoch for Stochastic')  # Vertical line at min_epoch_stochastic
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss for Mini-Batch and Stochastic Gradient Descent')
+    plt.legend()
+    plt.show()
+    
 
     return my_svm
 
@@ -329,16 +351,16 @@ Y = np.array([(data.loc[:, 'diagnosis']).to_numpy()]).T
 Y_target = np.vectorize(category_dict.get)(Y)
 
 # split data into train and test set using sklearn feature set
-print("splitting dataset into train and test sets...")
+print("Splitting dataset into train and test sets...")
 X_train, X_test, y_train, y_test = train_test_split(X_features, Y_target, test_size=0.2, random_state=42)
 
 
 
-my_svm = part_1(X_train,y_train,X_test,y_test)
+#my_svm = part_1(X_train,y_train,X_test,y_test)
+my_svm = part_2(X_train,y_train,X_test,y_test)
 
 '''
 my_svm = part_2()
-
 my_svm = part_3()
 
 #normalize the test set separately
