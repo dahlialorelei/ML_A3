@@ -106,6 +106,20 @@ class svm_():
         loss_avg += regularization_term
                 
         return loss_avg
+
+    def find_smallest_loss(self, test_features, test_output):
+        smallest_loss = float('inf')
+        best_feature_index = -1
+
+        for i in range(len(test_features)):
+            feature = test_features[i:i+1]  # Select the i-th feature vector
+            output = test_output[i:i+1]  # Select the corresponding output
+            loss = self.compute_loss(feature, output)
+            if loss < smallest_loss:
+                smallest_loss = loss
+                best_feature_index = i
+
+        return best_feature_index, smallest_loss
     
     def stochastic_gradient_descent(self,X,Y,test_features,test_output):
         print("Training started...")
@@ -176,6 +190,7 @@ class svm_():
 
             prev_loss = current_loss
 
+        
 
 
             # below code will be required for Part 3
@@ -190,24 +205,28 @@ class svm_():
         # Plot loss and validation loss
         plt.plot(epoch_values, loss_values, label='Training Loss')
         plt.plot(epoch_values, val_loss_values, label='Validation Loss')
-        plt.axvline(x=min_epoch, color='r', linestyle='--', label='Min Epoch')  # Vertical line at min_epoch
+        plt.axvline(x=min_epoch, color='r', linestyle='--', label='Min Epoch')  # min_epoch line 
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         if self.minibatch:
-            plt.title('Training and Validation Loss with Mini Batch')  # Add title to the graph
+            plt.title('Training and Validation Loss with Mini Batch') 
         else:   
-            plt.title('Training and Validation Loss with Batch')  # Add title to the graph
+            plt.title('Training and Validation Loss with Batch')  
         #plt.xscale('log')
         #plt.yscale('log')
         plt.legend()
         plt.show()
 
+      
+
+        
         return early_weights, best_weights, epoch_values, loss_values, val_loss_values, min_epoch
 
         # below code will be required for Part 3
         #print("The minimum number of samples used are:",samples)
 
     def mini_batch_gradient_descent(self, X, Y, test_features, test_output, batch_size):
+        #DON'T USE THIS FUNCTION
         self.mini_batch = True
         self.batch_size = batch_size
         early_weights, best_weights = self.stochastic_gradient_descent(X, Y, test_features, test_output)
@@ -224,7 +243,9 @@ class svm_():
         #implementation of sampling strategy - start
         return x,y
 
-    def predict(self,X_test,Y_test,weights):
+    def predict(self,X_test,Y_test,weights = None):
+        if weights is None:
+            weights = self.weights
 
         # Compute predictions on test set
         predicted_values = [np.sign(np.dot(X_test[i], weights)) for i in range(X_test.shape[0])]
@@ -304,25 +325,80 @@ def part_2(X_train, y_train, X_test, y_test):
     plt.title('Training and Validation Loss for Mini-Batch and Stochastic Gradient Descent')
     plt.legend()
     plt.show()
-    
 
     return my_svm
 
-def part_3(X_train,y_train):
+def part_3(X_train, y_train, X_test, y_test):
     #model parameters - try different ones
-    C = 0.001 
+    C = 1.4 
     learning_rate = 0.001 
-    epoch = 5000
+    epoch = 1000
+    tol = 1e-3
+    acc_tol = 0.0001
+    prev_accuracy = float('inf')
   
     #intantiate the support vector machine class above
-    my_svm = svm_(learning_rate=learning_rate,epoch=epoch,C_value=C,X=X_train,Y=y_train)
+    my_svm = svm_(learning_rate=learning_rate,epoch=epoch,tolerance=tol,C_value=C,X=X_train,Y=y_train, X_test=X_test, Y_test=y_test)
 
     #pre preocess data
+    X_norm,Y,X_test_norm = my_svm.pre_process()
+    
+    # Small, random subset of samples for training
+    size = 0.02 # 5% of the data
+    X_initial, X_unlabeled, y_initial, y_unlabeled = train_test_split(X_norm, Y, train_size=size, stratify=Y)
 
-    # select samples for training
+    # Inital training of model
+    my_svm.stochastic_gradient_descent(X_initial, y_initial, X_test_norm, y_test)
 
-    # train model
+    # Lists to store accuracy and number of samples
+    accuracy_values = []
+    num_samples = []
 
+    for _ in range(len(X_unlabeled)):
+        # Select the sample with the smallest loss from the unlabeled samples
+        best_feat_i, smallest_loss = my_svm.find_smallest_loss(X_unlabeled, y_unlabeled)
+
+        # Add the selected sample to the labeled training set
+        X_initial = np.vstack([X_initial, X_unlabeled[best_feat_i]])
+        y_initial = np.vstack([y_initial, y_unlabeled[best_feat_i]])
+
+        # Remove the selected sample from the unlabeled set
+        X_unlabeled = np.delete(X_unlabeled, best_feat_i, axis=0)
+        y_unlabeled = np.delete(y_unlabeled, best_feat_i, axis=0)
+
+        # Retrain the classifier on the updated training set
+        my_svm.stochastic_gradient_descent(X_initial, y_initial, X_test_norm, y_test)
+
+        accuracy, precision, recall = my_svm.predict(X_test_norm, y_test)
+
+        # Store accuracy and number of samples
+        accuracy_values.append(accuracy)
+        num_samples.append(len(X_initial))
+
+        if accuracy > 0.99:
+            print("The accuracy is above 99%.")
+            break
+        if (prev_accuracy - accuracy) < acc_tol:
+            print("The accuracy improvement is below the tolerance.")
+            break
+        
+        prev_accuracy = accuracy
+    
+    # Plot accuracy values vs the number of samples 
+    plt.plot(num_samples, accuracy_values, marker='o')
+    plt.xlabel('Number of Samples')
+    plt.ylabel('Accuracy')
+    plt.title('Accuracy vs. Number of Samples Used for Training')
+    plt.ylim(0, 1.0)
+    plt.grid(True)
+    plt.xticks(np.arange(min(num_samples), max(num_samples) + 1, 1))
+    plt.show()
+
+    accuracy, precision, recall = my_svm.predict(X_test_norm, y_test)
+    print("Accuracy on test dataset from part 3: {}".format(accuracy))
+    print("Precision on test dataset from part 3: {}".format(precision))
+    print("Recall on test dataset from part 3: {}".format(recall))
+    print("The number of samples used:",len(X_initial))
 
     return my_svm
 
@@ -357,7 +433,8 @@ X_train, X_test, y_train, y_test = train_test_split(X_features, Y_target, test_s
 
 
 #my_svm = part_1(X_train,y_train,X_test,y_test)
-my_svm = part_2(X_train,y_train,X_test,y_test)
+#my_svm = part_2(X_train,y_train,X_test,y_test)
+my_svm = part_3(X_train,y_train,X_test,y_test)
 
 '''
 my_svm = part_2()
