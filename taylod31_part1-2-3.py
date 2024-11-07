@@ -17,7 +17,7 @@
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt #CHECK THIS IS ALLOWED
+import matplotlib.pyplot as plt 
 
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn.model_selection import train_test_split 
@@ -93,18 +93,17 @@ class svm_():
 
     def compute_loss(self,X,Y):
         # calculate hinge loss
-        loss = 0
+        loss = np.array([0.0])
         for i in range(len(X)):
-            x_i = X[i]
-            y_i = Y[i]
+            x_i = np.array(X[i])
+            y_i = np.array(Y[i])
             hinge_loss = max(0, 1 - y_i * np.dot(x_i, self.weights))
             loss += hinge_loss
         # Normalize hinge loss
         loss_avg = loss / len(X)
         # Add regularization term
-        regularization_term = 0.5 * self.C * np.dot(self.weights, self.weights)
-        loss_avg += regularization_term
-                
+        #regularization_term = 0.5 * self.C * np.dot(self.weights, self.weights)
+        #loss_avg += regularization_term
         return loss_avg
 
     def find_smallest_loss(self, test_features, test_output):
@@ -164,14 +163,17 @@ class svm_():
             #print epoch if it is equal to thousand - to minimize number of prints
             if epoch % (self.epoch // 10) == 0 or epoch == self.epoch - 1:
             #if epoch %1 == 0:
+                
                 loss = self.compute_loss(features, output)
                 val_loss = self.compute_loss(test_features, test_output)
+                #print("Features are: ", features)
                 print("Epoch is: {}, Training Loss is : {}, and Validation Loss is : {}".format(epoch, loss, val_loss))
 
                 # Save loss, validation loss, and epoch values
                 loss_values.append(loss)
                 val_loss_values.append(val_loss)
                 epoch_values.append(epoch)
+
 
             
             # Part 1: Early Stopping
@@ -191,8 +193,6 @@ class svm_():
             prev_loss = current_loss
 
         
-
-
             # below code will be required for Part 3
             
             # Part 3
@@ -201,6 +201,7 @@ class svm_():
 
         print("Training ended...")
         print("Weights are: {}".format(self.weights))
+        
 
         # Plot loss and validation loss
         plt.plot(epoch_values, loss_values, label='Training Loss')
@@ -266,8 +267,8 @@ def part_1(X_train, y_train, X_test, y_test):
     # Model parameters
     C = 1.4
     learning_rate = 0.001
-    epoch = 1000
-    tol = 1e-5
+    epoch = 400
+    tol = 1e-3
   
     # Instantiate the support vector machine class above
     my_svm = svm_(learning_rate=learning_rate,epoch=epoch,tolerance=tol,C_value=C,X=X_train,Y=y_train, X_test=X_test, Y_test=y_test)
@@ -279,7 +280,7 @@ def part_1(X_train, y_train, X_test, y_test):
     early_weights, best_weights, epoch_values, loss_values, val_loss_values, min_epoch = my_svm.stochastic_gradient_descent(X_norm,Y,X_test_norm,y_test)
 
     # Compute accuracy
-    accuracy, precision, recall = my_svm.predict(X_test_norm, y_test, early_weights)
+    accuracy, precision, recall = my_svm.predict(X_test_norm, y_test, early_weights) #BUT WHAT IF NO EARLY WEIGHTS?
     print("Accuracy on test dataset from part 1: {}".format(accuracy))
     print("Precision on test dataset from part 1: {}".format(precision))
     print("Recall on test dataset from part 1: {}".format(recall))
@@ -290,7 +291,7 @@ def part_2(X_train, y_train, X_test, y_test):
     #model parameters - try different ones
     C = 1.4 
     learning_rate = 0.001 
-    epoch = 1000
+    epoch = 400
     batch_size = 32
     tol = 1e-5
   
@@ -332,10 +333,12 @@ def part_3(X_train, y_train, X_test, y_test):
     #model parameters - try different ones
     C = 1.4 
     learning_rate = 0.001 
-    epoch = 1000
+    epoch = 400
     tol = 1e-3
-    acc_tol = 0.0001
+    acc_tol = 1e-9
     prev_accuracy = float('inf')
+    accuracy_values = []
+    num_samples = []
   
     #intantiate the support vector machine class above
     my_svm = svm_(learning_rate=learning_rate,epoch=epoch,tolerance=tol,C_value=C,X=X_train,Y=y_train, X_test=X_test, Y_test=y_test)
@@ -345,14 +348,19 @@ def part_3(X_train, y_train, X_test, y_test):
     
     # Small, random subset of samples for training
     size = 0.02 # 5% of the data
+    print("The size of X_norm is:", np.shape(X_norm))
     X_initial, X_unlabeled, y_initial, y_unlabeled = train_test_split(X_norm, Y, train_size=size, stratify=Y)
+    print("The size of X_initial is:", np.shape(X_initial))
 
     # Inital training of model
     my_svm.stochastic_gradient_descent(X_initial, y_initial, X_test_norm, y_test)
+    
+    accuracy, precision, recall = my_svm.predict(X_test_norm, y_test)
+    accuracy_values.append(accuracy)
+    num_samples.append(len(X_initial))
 
     # Lists to store accuracy and number of samples
-    accuracy_values = []
-    num_samples = []
+    
 
     for _ in range(len(X_unlabeled)):
         # Select the sample with the smallest loss from the unlabeled samples
@@ -366,6 +374,7 @@ def part_3(X_train, y_train, X_test, y_test):
         X_unlabeled = np.delete(X_unlabeled, best_feat_i, axis=0)
         y_unlabeled = np.delete(y_unlabeled, best_feat_i, axis=0)
 
+        print("The size of X_initial going into the next epoch is:", np.shape(X_initial))
         # Retrain the classifier on the updated training set
         my_svm.stochastic_gradient_descent(X_initial, y_initial, X_test_norm, y_test)
 
@@ -375,10 +384,10 @@ def part_3(X_train, y_train, X_test, y_test):
         accuracy_values.append(accuracy)
         num_samples.append(len(X_initial))
 
-        if accuracy > 0.99:
+        if accuracy > 0.999999:
             print("The accuracy is above 99%.")
             break
-        if (prev_accuracy - accuracy) < acc_tol:
+        if (abs(prev_accuracy - accuracy)) < acc_tol:
             print("The accuracy improvement is below the tolerance.")
             break
         
@@ -428,13 +437,13 @@ Y_target = np.vectorize(category_dict.get)(Y)
 
 # split data into train and test set using sklearn feature set
 print("Splitting dataset into train and test sets...")
-X_train, X_test, y_train, y_test = train_test_split(X_features, Y_target, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X_features, Y_target, test_size=0.2, random_state=88)
 
 
 
-#my_svm = part_1(X_train,y_train,X_test,y_test)
+my_svm = part_1(X_train,y_train,X_test,y_test)
 #my_svm = part_2(X_train,y_train,X_test,y_test)
-my_svm = part_3(X_train,y_train,X_test,y_test)
+#my_svm = part_3(X_train,y_train,X_test,y_test)
 
 '''
 my_svm = part_2()
